@@ -1,37 +1,8 @@
 from itertools import chain
 import numpy as np
 from google.protobuf.json_format import ParseDict, MessageToDict
-import onnx
-from onnx import numpy_helper
 from .core import reindex, make_node_attr
 from .protobuf import unwrap
-
-def make_tensor_value_info(name, elem_type, *args, **kwargs):
-    elem_type = onnx.TensorProto.DESCRIPTOR.enum_types_by_name['DataType'].values_by_name[elem_type].number
-    return onnx.helper.make_tensor_value_info(name, elem_type, *args, **kwargs)
-
-
-def from_onnx(onnx_model):
-    g = unwrap(onnx_model.graph)
-    ext_inputs = (('Input', params, label, []) for (label, params) in g.get('input',[]))
-    constants =  (('Constant', {'value': v}, v.name, []) for v in g.get('initializer',[]))
-    net =        ((n['op_type'], dict(n.get('attribute',())), label, n.get('input', [])) 
-                   for n in g['node'] for label in n['output'])
-    return {l: make_node_attr(t, p, l, i) for (t, p, l, i) in chain(ext_inputs, constants, net)}
-
-
-def to_onnx(graph, name, outputs=None, initializer=None):
-    from_np = lambda a: numpy_helper.from_array(a) if isinstance(a, np.ndarray) else a
-    nodes = [onnx.helper.make_node(attr['type'], [str(i) for i in attr['inputs']], [str(n)],
-                                   **{k: from_np(v) for (k,v) in attr['params'].items()})
-             for (n, attr) in graph.items() if attr['type'] != 'Input']
-    inputs = [make_tensor_value_info(str(n), **a['params'])
-              for (n, a) in graph.items() if a['type'] == 'Input']
-    outputs = [] if outputs is None else [make_tensor_value_info(str(n), **a)
-               for (n, a) in outputs]
-    onnx_graph = onnx.helper.make_graph(nodes, name, inputs, outputs, initializer=initializer)
-    return onnx.helper.make_model(onnx_graph)
-
 
 def from_tflow(graph_def):
     graph = {n['name']: make_node_attr(n['op'], n.get('attr', {}), n['name'], 
